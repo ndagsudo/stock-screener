@@ -69,8 +69,17 @@ class JQuantsClient:
                 if resp.status_code == 429:
                     time.sleep(min(2 ** attempt, 30))
                     continue
+                if 400 <= resp.status_code < 500:
+                    # クライアントエラーはリトライしても直らないため即座に失敗させる
+                    # （レート制限の消費を無駄にしないため）。レスポンス本文を含めて
+                    # 原因を特定しやすくする。
+                    raise JQuantsAPIError(
+                        f"GET {path} returned {resp.status_code}: {resp.text[:500]}"
+                    )
                 resp.raise_for_status()
                 return resp.json()
+            except JQuantsAPIError:
+                raise
             except requests.RequestException as exc:  # noqa: PERF203
                 last_exc = exc
                 time.sleep(min(2 ** attempt, 10))

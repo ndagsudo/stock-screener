@@ -95,7 +95,7 @@ def load_market_snapshot(
             records = client.get_daily_quotes(date=candidate_date)
         except JQuantsAPIError as exc:
             database.log_error(conn, run_id, "load_market_snapshot", str(exc))
-            return 0
+            continue
         if records:
             rows = _quotes_to_rows(records)
             database.upsert(conn, "prices", rows, ["code", "date"])
