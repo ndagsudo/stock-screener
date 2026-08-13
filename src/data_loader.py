@@ -10,6 +10,7 @@ J-Quants API から取得した生データを SQLite に取り込むオーケ�
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src import database
 from src.jquants_client import JQuantsClient, JQuantsAPIError
+
+_SUBSCRIPTION_RANGE_RE = re.compile(r"covers the following dates:\s*[\d-]+\s*~\s*(\d{4}-\d{2}-\d{2})")
+
+
+def _parse_subscription_end_date(message: str) -> Optional[str]:
+    """J-Quantsが返す『契約プランがカバーする日付範囲外』エラーメッセージから
+    上限日付を抽出する（例: "Your subscription covers the following dates:
+    2024-05-21 ~ 2026-05-21. ..." -> "20260521"）。Freeプラン等では『today』が
+    必ずしもこの範囲に収まらない（直近数か月のデータが未提供）ため、この
+    上限日付を実際の『取得可能な最新日』として扱う。"""
+    m = _SUBSCRIPTION_RANGE_RE.search(message or "")
+    if not m:
+        return None
+    return m.group(1).replace("-", "")
 
 
 def _now_iso() -> str:
@@ -79,31 +94,52 @@ def load_universe(client: JQuantsClient, conn: sqlite3.Connection, run_id: str) 
 
 def load_market_snapshot(
     client: JQuantsClient, conn: sqlite3.Connection, run_id: str, date: Optional[str] = None, max_lookback_days: int = 10
-) -> int:
+) -> tuple[int, Optional[str]]:
     """指定日（省略時は当日）を起点に、データが存在する直近営業日を探して
     全銘柄の株価・時価総額スナップショットを取得する。
 
     J-Quantsの日次株価は当日中には確定しておらず、公開プランによっては
-    翌営業日にならないと取得できない場合がある。単純に「今日」だけを
-    リクエストすると常に0件になりうるため、データが見つかるまで
-    過去に遡ってリトライする。
+    翌営業日にならないと取得できない場合がある。さらにFreeプラン等では
+    契約がカバーする日付範囲そのものが『today』より数か月前で止まっている
+    ことがある（例: 2024-05-21〜2026-05-21）。単純に「今日」だけを
+    リクエストすると常に0件・400エラーになりうるため、契約範囲外エラーが
+    返ってきた場合はそのエラーメッセージから実際の上限日付を読み取り、
+    そこを起点に営業日を遡って探す。
+
+    戻り値は (取得件数, 実際に使用した日付 or None)。使用した日付は、
+    以降の価格履歴取得（load_price_history）の上限にも使う。
     """
     base_date = datetime.strptime(date, "%Y%m%d") if date else datetime.now(timezone.utc)
-    for offset in range(max_lookback_days):
+    jumped_to_subscription_limit = False
+    offset = 0
+    attempts = 0
+    max_attempts = max_lookback_days + 1  # 契約範囲外エラーによるジャンプは1回分だけ余分に許容
+    while attempts < max_attempts:
+        attempts += 1
         candidate_date = (base_date - timedelta(days=offset)).strftime("%Y%m%d")
         try:
             records = client.get_daily_quotes(date=candidate_date)
         except JQuantsAPIError as exc:
-            database.log_error(conn, run_id, "load_market_snapshot", str(exc))
+            message = str(exc)
+            database.log_error(conn, run_id, "load_market_snapshot", message)
+            subscription_end = _parse_subscription_end_date(message)
+            if subscription_end and not jumped_to_subscription_limit:
+                # 契約範囲の上限日付に一度だけジャンプして、そこから営業日を遡る
+                base_date = datetime.strptime(subscription_end, "%Y%m%d")
+                jumped_to_subscription_limit = True
+                offset = 0
+                continue
+            offset += 1
             continue
         if records:
             rows = _quotes_to_rows(records)
             database.upsert(conn, "prices", rows, ["code", "date"])
-            return len(rows)
+            return len(rows), candidate_date
+        offset += 1
     database.log_error(
         conn, run_id, "load_market_snapshot", f"過去{max_lookback_days}日以内に株価データが見つかりませんでした"
     )
-    return 0
+    return 0, None
 
 
 def _quotes_to_rows(records: list[dict]) -> list[dict]:
@@ -135,10 +171,20 @@ def _quotes_to_rows(records: list[dict]) -> list[dict]:
     return rows
 
 
-def load_price_history(client: JQuantsClient, conn: sqlite3.Connection, run_id: str, code: str, days: int = 400) -> int:
-    """52週高値・200日移動平均・株価CAGR計算のため、銘柄別に価格履歴を取得する。"""
-    from_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y%m%d")
-    to_date = _today_str().replace("-", "")
+def load_price_history(
+    client: JQuantsClient,
+    conn: sqlite3.Connection,
+    run_id: str,
+    code: str,
+    days: int = 400,
+    as_of_date: Optional[str] = None,
+) -> int:
+    """52週高値・200日移動平均・株価CAGR計算のため、銘柄別に価格履歴を取得する。
+    as_of_date (YYYYMMDD) を指定すると、それを取得範囲の上限とする
+    （契約プランのデータ提供範囲が『今日』より前で止まっている場合に使う）。"""
+    anchor = datetime.strptime(as_of_date, "%Y%m%d") if as_of_date else datetime.now(timezone.utc)
+    from_date = (anchor - timedelta(days=days)).strftime("%Y%m%d")
+    to_date = anchor.strftime("%Y%m%d")
     try:
         records = client.get_daily_quotes(code=code, from_date=from_date, to_date=to_date)
     except JQuantsAPIError as exc:
@@ -271,7 +317,9 @@ def load_all(run_id: str, api_key: Optional[str] = None, max_codes: Optional[int
 
     with database.connect() as conn:
         summary["companies"] = load_universe(client, conn, run_id)
-        summary["market_snapshot"] = load_market_snapshot(client, conn, run_id)
+        market_snapshot_count, effective_date = load_market_snapshot(client, conn, run_id)
+        summary["market_snapshot"] = market_snapshot_count
+        summary["effective_date"] = effective_date
         codes = prefilter_by_market_cap(conn)
         if max_codes:
             codes = codes[:max_codes]
@@ -281,7 +329,7 @@ def load_all(run_id: str, api_key: Optional[str] = None, max_codes: Optional[int
         summary["financials"] = 0
         summary["dividends"] = 0
         for code in codes:
-            summary["price_history"] += load_price_history(client, conn, run_id, code)
+            summary["price_history"] += load_price_history(client, conn, run_id, code, as_of_date=effective_date)
             summary["financials"] += load_financials(client, conn, run_id, code)
             summary["dividends"] += load_dividends(client, conn, run_id, code)
 
