@@ -30,13 +30,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        working-directory: stock-screener
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run weekly pipeline
-        working-directory: stock-screener
         env:
           JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -44,7 +42,6 @@ jobs:
           python -m src.main
 
       - name: Commit updated database (ranking history must never be lost)
-        working-directory: stock-screener
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -62,7 +59,7 @@ jobs:
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: stock-screener/site
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment
