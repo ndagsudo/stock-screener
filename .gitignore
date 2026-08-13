@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+# NOTE: data/stock.db is intentionally NOT ignored.
+# This project has no backend server/database — GitHub Actions checks out
+# the repo, updates data/stock.db, and commits it back so that weekly
+# ranking history persists across runs. Do not add it here.
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+site/**
+!site/.gitkeep
+.venv/
+venv/
+*.log

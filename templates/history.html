@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}過去の記録 - {{ site_title }}{% endblock %}
+{% block content %}
+<h1>過去のランキング記録（🔥今週の注目株）</h1>
+<p class="note">過去のランキングは一切削除せず、すべて保存しています。予測がその後どうなったかは各銘柄ページ、またはトップページの成績検証をご覧ください。</p>
+
+{% if history %}
+{% for week in history %}
+<section class="history-week">
+  <h2>{{ week.run_id }}</h2>
+  {% if week.entries %}
+  <table class="rank-table">
+    <thead><tr><th>順位</th><th>銘柄</th><th>スコア</th><th>当時の株価</th><th>変動</th></tr></thead>
+    <tbody>
+    {% for item in week.entries %}
+      <tr>
+        <td>{{ item.rank }}</td>
+        <td><a href="/stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
+        <td>{{ item.score|num(1) }}</td>
+        <td>{{ item.price|price }}</td>
+        <td>{{ item.rank_change_display }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endfor %}
+{% else %}
+<p class="empty">まだ記録がありません。</p>
+{% endif %}
+{% endblock %}

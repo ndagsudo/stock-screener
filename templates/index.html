@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ site_title }}{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <h1>日本中小型株スクリーナー</h1>
+  <p class="hero-sub">利益成長に対してまだ株価が織り込んでいない中小型株を、Pythonの数値スクリーニングで毎週自動発掘。AIは「なぜ面白いか」を整理するだけで、ランキングは決めません。</p>
+  {% if run.run_update %}
+  <p class="last-updated">最終更新: {{ run.run_id }}（{{ run.run_update.status }} / 候補 {{ run.run_update.candidates_screened }}銘柄 → スコアリング {{ run.run_update.candidates_scored }}銘柄 → AI分析 {{ run.run_update.ai_analyzed }}銘柄）</p>
+  {% else %}
+  <p class="last-updated">まだデータがありません。GitHub Actions の初回実行後に表示されます。</p>
+  {% endif %}
+</section>
+
+<section class="highlight">
+  <h2>🔥 今週の注目株</h2>
+  {% if run.categories.weekly_top10 %}
+  <div class="card-grid">
+    {% for item in run.categories.weekly_top10 %}
+    <a class="stock-card rank-{{ item.rank }}" href="/stocks/{{ item.code }}.html">
+      <div class="rank-badge">
+        {% if item.rank == 1 %}🥇{% elif item.rank == 2 %}🥈{% elif item.rank == 3 %}🥉{% else %}{{ item.rank }}位{% endif %}
+      </div>
+      <div class="stock-main">
+        <div class="stock-name">{{ item.company_name or item.code }} <span class="code">({{ item.code }})</span></div>
+        <div class="score">{{ item.score|num(1) }}点</div>
+        <div class="reason">{{ item.reason }}</div>
+        <div class="rank-change">
+          {% if item.rank_change == 'new' %}<span class="badge new">NEW</span>
+          {% elif item.rank_change == 'up' %}<span class="badge up">↑ 前週{{ item.prev_rank }}位</span>
+          {% elif item.rank_change == 'down' %}<span class="badge down">↓ 前週{{ item.prev_rank }}位</span>
+          {% elif item.rank_change == 'same' %}<span class="badge same">→ 前週{{ item.prev_rank }}位</span>
+          {% else %}<span class="badge">再ランクイン</span>{% endif %}
+        </div>
+        <div class="price">株価 {{ item.price|price }}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">今週のデータはまだありません。</p>
+  {% endif %}
+</section>
+
+<section class="performance">
+  <h2>過去{{ performance.window_months }}か月の成績検証</h2>
+  <p class="note">「今週の注目株」に選ばれた銘柄が、選ばれた時点の株価から現在までにどう動いたかの実績です（look-ahead biasを避けるため、その時点のランキングと価格のみを使用）。</p>
+  <div class="perf-grid">
+    <div class="perf-box">
+      <div class="perf-label">TOP1</div>
+      <div class="perf-value">{{ performance.top1.avg_return|pct if performance.top1.avg_return is not none else "データなし" }}</div>
+      <div class="perf-sub">中央値 {{ performance.top1.median_return|pct if performance.top1.median_return is not none else "-" }} / プラス率 {{ performance.top1.positive_ratio|pct if performance.top1.positive_ratio is not none else "-" }} / n={{ performance.top1.count or 0 }}</div>
+    </div>
+    <div class="perf-box">
+      <div class="perf-label">TOP3</div>
+      <div class="perf-value">{{ performance.top3.avg_return|pct if performance.top3.avg_return is not none else "データなし" }}</div>
+      <div class="perf-sub">中央値 {{ performance.top3.median_return|pct if performance.top3.median_return is not none else "-" }} / プラス率 {{ performance.top3.positive_ratio|pct if performance.top3.positive_ratio is not none else "-" }} / n={{ performance.top3.count or 0 }}</div>
+    </div>
+    <div class="perf-box">
+      <div class="perf-label">TOP10</div>
+      <div class="perf-value">{{ performance.top10.avg_return|pct if performance.top10.avg_return is not none else "データなし" }}</div>
+      <div class="perf-sub">中央値 {{ performance.top10.median_return|pct if performance.top10.median_return is not none else "-" }} / プラス率 {{ performance.top10.positive_ratio|pct if performance.top10.positive_ratio is not none else "-" }} / n={{ performance.top10.count or 0 }}</div>
+    </div>
+    <div class="perf-box">
+      <div class="perf-label">ベンチマーク（{{ settings.BENCHMARK_CODE }}）</div>
+      <div class="perf-value">{{ performance.benchmark.return|pct if performance.benchmark else "データなし" }}</div>
+      <div class="perf-sub">指数データが未取得の場合は表示されません</div>
+    </div>
+  </div>
+</section>
+
+{% macro category_preview(key, title) %}
+<section class="category-preview">
+  <h2>{{ title }}</h2>
+  {% set items = run.categories.get(key, []) %}
+  {% if items %}
+  <table class="rank-table">
+    <thead><tr><th>順位</th><th>銘柄</th><th>スコア</th><th>株価</th><th>理由</th></tr></thead>
+    <tbody>
+    {% for item in items[:5] %}
+      <tr>
+        <td>{{ item.rank }}</td>
+        <td><a href="/stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
+        <td>{{ item.score|num(1) }}</td>
+        <td>{{ item.price|price }}</td>
+        <td>{{ item.reason }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <a class="more-link" href="/rankings.html#{{ key }}">すべて見る →</a>
+  {% else %}
+  <p class="empty">該当銘柄なし</p>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{{ category_preview("double_5y", "5年2倍候補（システム試算）") }}
+{{ category_preview("triple_5y", "5年3倍候補（システム試算）") }}
+{{ category_preview("turnaround", "業績回復型") }}
+
+<section class="notes">
+  <h2>注意事項</h2>
+  <ul>
+    <li>本サイトのランキング・スコア・5年シミュレーションはすべてPythonによる客観的な数値計算です。AIは銘柄を選びません。</li>
+    <li>5年後株価試算はあくまで「システム試算」であり、将来の株価を保証するものではありません。</li>
+    <li>AIによる定性分析は「強気材料・弱気材料・確認事項」の整理であり、投資助言ではありません。情報を確認できない場合は「情報を確認できませんでした」と表示されます。</li>
+  </ul>
+</section>
+
+{% endblock %}

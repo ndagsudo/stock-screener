@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}{{ site_title }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="/index.html">📊 中小型株スクリーナー <span class="sub">投資版 miyagi-kids</span></a>
+    <nav>
+      <a href="/index.html">今週の注目株</a>
+      <a href="/rankings.html">ランキング</a>
+      <a href="/history.html">過去の記録</a>
+      <a href="/methodology.html">仕組み・免責</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <p class="disclaimer">
+      本サイトは投資研究・分析を目的とした個人用ツールです。将来の株価や利益を保証するものではありません。
+      掲載情報を利用した投資判断は利用者自身の責任で行ってください。
+      すべての順位・スコア・シミュレーションはPythonによる機械的な計算であり、AIは数値を計算していません。
+      AIによる定性コメントは「強気材料・弱気材料・確認事項」の整理であり、売買の推奨ではありません。
+    </p>
+    <p class="generated-at">ページ生成日時（UTC）: {{ generated_at }}</p>
+  </div>
+</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ stock.company.name }} ({{ stock.company.code }}) - {{ site_title }}{% endblock %}
+{% block content %}
+
+<section class="stock-header">
+  <h1>{{ stock.company.name }} <span class="code">{{ stock.company.code }}</span></h1>
+  <p class="sub">{{ stock.company.market_name }} / {{ stock.company.sector33_name }}</p>
+  {% if stock.rankings %}
+  <div class="rank-tags">
+    {% for r in stock.rankings %}
+    <span class="tag">{{ r.category }} {{ r.rank }}位</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="metrics-grid">
+  <div class="metric"><div class="label">株価</div><div class="value">{{ stock.indicators.price|price }}</div></div>
+  <div class="metric"><div class="label">時価総額</div><div class="value">{{ stock.indicators.market_cap|yen_oku }}</div></div>
+  <div class="metric"><div class="label">PER</div><div class="value">{{ stock.indicators.per|num(1) if stock.indicators.per is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">PBR</div><div class="value">{{ stock.indicators.pbr|num(2) if stock.indicators.pbr is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">PEG</div><div class="value">{{ stock.indicators.peg|num(2) if stock.indicators.peg is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">ROE</div><div class="value">{{ stock.indicators.roe|pct if stock.indicators.roe is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">営業利益率</div><div class="value">{{ stock.indicators.operating_margin|pct if stock.indicators.operating_margin is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">自己資本比率</div><div class="value">{{ stock.indicators.equity_ratio|pct if stock.indicators.equity_ratio is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">EPS</div><div class="value">{{ stock.indicators.eps|num(1) if stock.indicators.eps is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">EPS成長率(YoY)</div><div class="value">{{ stock.indicators.eps_growth_yoy|pct if stock.indicators.eps_growth_yoy is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">売上成長率(YoY)</div><div class="value">{{ stock.indicators.sales_growth_yoy|pct if stock.indicators.sales_growth_yoy is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">営業利益成長率(YoY)</div><div class="value">{{ stock.indicators.operating_profit_growth_yoy|pct if stock.indicators.operating_profit_growth_yoy is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">52週高値からの下落率</div><div class="value">{{ stock.indicators.drawdown_from_52w_high|pct if stock.indicators.drawdown_from_52w_high is not none else "データなし" }}</div></div>
+  <div class="metric"><div class="label">200日線乖離率</div><div class="value">{{ stock.indicators.ma200_deviation|pct if stock.indicators.ma200_deviation is not none else "データなし" }}</div></div>
+</section>
+
+{% if stock.scored %}
+<section class="score-section">
+  <h2>数値スコア {{ stock.scored.total_score|num(1) }} / 100点</h2>
+  <div class="score-bars">
+    <div class="score-bar"><span>成長性</span><progress max="30" value="{{ stock.scored.growth_score }}"></progress><span>{{ stock.scored.growth_score|num(1) }}/30</span></div>
+    <div class="score-bar"><span>割安性</span><progress max="25" value="{{ stock.scored.valuation_score }}"></progress><span>{{ stock.scored.valuation_score|num(1) }}/25</span></div>
+    <div class="score-bar"><span>収益性</span><progress max="15" value="{{ stock.scored.profitability_score }}"></progress><span>{{ stock.scored.profitability_score|num(1) }}/15</span></div>
+    <div class="score-bar"><span>財務健全性</span><progress max="10" value="{{ stock.scored.health_score }}"></progress><span>{{ stock.scored.health_score|num(1) }}/10</span></div>
+    <div class="score-bar"><span>業績モメンタム</span><progress max="10" value="{{ stock.scored.momentum_score }}"></progress><span>{{ stock.scored.momentum_score|num(1) }}/10</span></div>
+    <div class="score-bar"><span>株価位置</span><progress max="10" value="{{ stock.scored.price_position_score }}"></progress><span>{{ stock.scored.price_position_score|num(1) }}/10</span></div>
+  </div>
+</section>
+{% endif %}
+
+<section class="history-section">
+  <h2>過去業績・株価の推移</h2>
+  <canvas id="priceChart" height="220"
+    data-prices='{{ stock.price_history | tojson }}'></canvas>
+  <canvas id="financialsChart" height="220"
+    data-financials='{{ stock.financial_history | tojson }}'></canvas>
+</section>
+
+<section class="forecast-section">
+  <h2>5年シミュレーション（システム試算・将来を保証するものではありません）</h2>
+  {% if stock.forecasts %}
+  <table class="forecast-table">
+    <thead><tr><th>シナリオ</th><th>使用成長率</th><th>出口PER</th><th>5年後EPS</th><th>5年後株価</th><th>現在株価比</th><th>CAGR</th></tr></thead>
+    <tbody>
+    {% for scenario, label in [("bear","弱気"), ("base","標準"), ("bull","強気")] %}
+      {% set f = stock.forecasts.get(scenario) %}
+      {% if f %}
+      <tr class="scenario-{{ scenario }}">
+        <td>{{ label }}</td>
+        <td>{{ f.growth_rate_used|pct }}</td>
+        <td>{{ f.exit_per }}倍</td>
+        <td>{{ f.future_eps|num(1) if f.future_eps is not none else "データなし" }}円</td>
+        <td>{{ f.future_price|price if f.future_price is not none else "データなし" }}</td>
+        <td>{{ f.multiple|num(2) if f.multiple is not none else "データなし" }}倍</td>
+        <td>{{ f.cagr|pct if f.cagr is not none else "データなし" }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">シミュレーションに必要なデータ（EPS・成長率）が不足しているため試算できません。</p>
+  {% endif %}
+</section>
+
+<section class="ai-section">
+  <h2>AI定性分析</h2>
+  {% if stock.ai %}
+  <p class="ai-meta">分析日: {{ stock.ai.analysis_date }} / モデル: {{ stock.ai.model }} / 参照決算開示日: {{ stock.ai.financials_disclosure_date or "データなし" }}</p>
+
+  <h3>なぜ注目されているか</h3>
+  <p>{{ stock.ai.why_notable }}</p>
+
+  <h3>強気材料</h3>
+  {% if stock.ai.bull_points %}
+  <ol>{% for p in stock.ai.bull_points %}<li>{{ p }}</li>{% endfor %}</ol>
+  {% else %}<p class="empty">情報を確認できませんでした。</p>{% endif %}
+
+  <h3>弱気材料</h3>
+  {% if stock.ai.bear_points %}
+  <ol>{% for p in stock.ai.bear_points %}<li>{{ p }}</li>{% endfor %}</ol>
+  {% else %}<p class="empty">情報を確認できませんでした。</p>{% endif %}
+
+  <h3>次回決算で確認すること</h3>
+  {% if stock.ai.checkpoints %}
+  <ol>{% for p in stock.ai.checkpoints %}<li>{{ p }}</li>{% endfor %}</ol>
+  {% else %}<p class="empty">情報を確認できませんでした。</p>{% endif %}
+
+  <h3>事業の成長ドライバー</h3>
+  {% if stock.ai.growth_drivers %}
+  <ul>{% for p in stock.ai.growth_drivers %}<li>{{ p }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty">情報を確認できませんでした。</p>{% endif %}
+
+  <h3>競争優位性</h3>
+  {% if stock.ai.competitive_advantages %}
+  <ul>{% for p in stock.ai.competitive_advantages %}<li>{{ p }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty">情報を確認できませんでした。</p>{% endif %}
+
+  <h3>AIによる総合コメント</h3>
+  <p>{{ stock.ai.overall_comment }}</p>
+  {% if stock.ai.confidence_note %}
+  <p class="confidence-note">※ {{ stock.ai.confidence_note }}</p>
+  {% endif %}
+
+  <h3>情報源</h3>
+  {% if stock.ai.sources %}
+  <ul class="sources">
+    {% for s in stock.ai.sources %}
+    <li>[{{ s.source_type }}] <a href="{{ s.url }}">{{ s.title }}</a>（取得日: {{ s.retrieved_date }}）</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">情報源データがありません。</p>
+  {% endif %}
+
+  <p class="ai-disclaimer">
+    このAI分析は「強気材料・弱気材料・確認事項」の整理であり、投資助言・売買推奨ではありません。
+    数値（スコア・PER・成長率等）は全てPythonで計算済みのものをAIに渡しており、AI自身が計算したものではありません。
+  </p>
+  {% else %}
+  <p class="empty">この銘柄はまだAI分析の対象になっていません（AI分析はスコア上位・大幅順位上昇銘柄が対象です）。</p>
+  {% endif %}
+</section>
+
+{% endblock %}

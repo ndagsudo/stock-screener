@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}ランキング - {{ site_title }}{% endblock %}
+{% block content %}
+<h1>カテゴリー別ランキング</h1>
+<p class="note">run_id: {{ run.run_id or "データなし" }}</p>
+
+{% for key, label in category_labels.items() %}
+{% if key != "overall" %}
+<section id="{{ key }}" class="category-block">
+  <h2>{{ label }}</h2>
+  {% set items = run.categories.get(key, []) %}
+  {% if items %}
+  <div class="table-scroll">
+  <table class="rank-table wide">
+    <thead>
+      <tr>
+        <th>順位</th><th>変動</th><th>銘柄</th><th>スコア</th><th>株価</th>
+        <th>PER</th><th>PBR</th><th>PEG</th><th>ROE</th><th>営業利益率</th><th>理由</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+      <tr>
+        <td>{{ item.rank }}</td>
+        <td>{{ item.rank_change_display }}{% if item.prev_rank %} (前週{{ item.prev_rank }}位){% endif %}</td>
+        <td><a href="/stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
+        <td>{{ item.score|num(1) }}</td>
+        <td>{{ item.price|price }}</td>
+        <td>{{ item.indicators.per|num(1) if item.indicators.per is not none else "データなし" }}</td>
+        <td>{{ item.indicators.pbr|num(2) if item.indicators.pbr is not none else "データなし" }}</td>
+        <td>{{ item.indicators.peg|num(2) if item.indicators.peg is not none else "データなし" }}</td>
+        <td>{{ item.indicators.roe|pct if item.indicators.roe is not none else "データなし" }}</td>
+        <td>{{ item.indicators.operating_margin|pct if item.indicators.operating_margin is not none else "データなし" }}</td>
+        <td>{{ item.reason }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">該当銘柄なし</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endfor %}
+{% endblock %}
