@@ -42,6 +42,13 @@ AI_REANALYSIS_ON_NEW_FINANCIALS = True   # a newer disclosure than cached one ex
 MIN_MARKET_CAP = 10_000_000_000      # 100億円
 MAX_MARKET_CAP = 300_000_000_000     # 3,000億円
 
+# 時価総額帯に該当する銘柄のうち、実際に価格履歴・決算を取得する銘柄数の上限。
+# J-Quants Freeプランは5req/分しかなく、1銘柄あたり3コール（価格・決算・配当）
+# 必要なため、無制限だと数百銘柄で数時間かかる。0 または None で無制限。
+# Light/Standard/Premiumプラン（60/120/500 req/分）に上げた場合はこの値も
+# 大きくしてよい。
+MAX_CODES_PER_RUN = int(os.environ.get("MAX_CODES_PER_RUN", "120")) or None
+
 # 除外する市場区分/商品区分キーワード（REIT・ETF・ETN・投信など）
 EXCLUDE_NAME_KEYWORDS = [
     "投資法人", "ＲＥＩＴ", "REIT", "上場投信", "ETF", "ETN", "インフラファンド",

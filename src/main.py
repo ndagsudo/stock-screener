@@ -47,6 +47,7 @@ def run_pipeline(
     skip_fetch: bool = False,
 ) -> dict:
     run_id = run_id or default_run_id()
+    max_codes = max_codes if max_codes is not None else settings.MAX_CODES_PER_RUN
     database.init_db()
 
     with database.connect() as conn:
