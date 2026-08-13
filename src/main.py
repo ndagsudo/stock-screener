@@ -23,6 +23,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
@@ -34,7 +35,10 @@ def _now_iso() -> str:
 
 
 def default_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """ランキング作成日。GitHub Actionsのcronスケジュールは
+    UTCで指定しているが、run_idは『毎週土曜日』という運用上の意味を
+    持つため、日本時間(Asia/Tokyo)の日付を使う。"""
+    return datetime.now(ZoneInfo(settings.UPDATE_TIMEZONE)).strftime("%Y-%m-%d")
 
 
 def run_pipeline(

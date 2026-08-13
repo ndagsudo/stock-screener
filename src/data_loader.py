@@ -77,17 +77,33 @@ def load_universe(client: JQuantsClient, conn: sqlite3.Connection, run_id: str) 
     return len(rows)
 
 
-def load_market_snapshot(client: JQuantsClient, conn: sqlite3.Connection, run_id: str, date: Optional[str] = None) -> int:
-    """指定日（省略時は当日/直近営業日）の全銘柄の株価・時価総額スナップショットを取得する。"""
-    date = date or _today_str().replace("-", "")
-    try:
-        records = client.get_daily_quotes(date=date)
-    except JQuantsAPIError as exc:
-        database.log_error(conn, run_id, "load_market_snapshot", str(exc))
-        return 0
-    rows = _quotes_to_rows(records)
-    database.upsert(conn, "prices", rows, ["code", "date"])
-    return len(rows)
+def load_market_snapshot(
+    client: JQuantsClient, conn: sqlite3.Connection, run_id: str, date: Optional[str] = None, max_lookback_days: int = 10
+) -> int:
+    """指定日（省略時は当日）を起点に、データが存在する直近営業日を探して
+    全銘柄の株価・時価総額スナップショットを取得する。
+
+    J-Quantsの日次株価は当日中には確定しておらず、公開プランによっては
+    翌営業日にならないと取得できない場合がある。単純に「今日」だけを
+    リクエストすると常に0件になりうるため、データが見つかるまで
+    過去に遡ってリトライする。
+    """
+    base_date = datetime.strptime(date, "%Y%m%d") if date else datetime.now(timezone.utc)
+    for offset in range(max_lookback_days):
+        candidate_date = (base_date - timedelta(days=offset)).strftime("%Y%m%d")
+        try:
+            records = client.get_daily_quotes(date=candidate_date)
+        except JQuantsAPIError as exc:
+            database.log_error(conn, run_id, "load_market_snapshot", str(exc))
+            return 0
+        if records:
+            rows = _quotes_to_rows(records)
+            database.upsert(conn, "prices", rows, ["code", "date"])
+            return len(rows)
+    database.log_error(
+        conn, run_id, "load_market_snapshot", f"過去{max_lookback_days}日以内に株価データが見つかりませんでした"
+    )
+    return 0
 
 
 def _quotes_to_rows(records: list[dict]) -> list[dict]:
