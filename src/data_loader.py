@@ -149,6 +149,7 @@ def _quotes_to_rows(records: list[dict]) -> list[dict]:
         date = r.get("Date")
         if not code or not date:
             continue
+        mkt_cap = r.get("MktCap")
         rows.append(
             {
                 "code": code,
@@ -164,7 +165,11 @@ def _quotes_to_rows(records: list[dict]) -> list[dict]:
                 "volume": r.get("Vo"),
                 "adj_volume": r.get("AdjVo"),
                 "turnover_value": r.get("Va"),
-                "market_cap": r.get("MktCap"),
+                # J-QuantsのMktCapは「百万円」単位で返る。DB(prices.market_cap)は
+                # 円単位に統一する（indicators.calc_market_cap や config.settings の
+                # MIN/MAX_MARKET_CAP も円単位のため、ここで揃えないと時価総額
+                # フィルタが常に0件になる）。
+                "market_cap": (mkt_cap * 1_000_000) if mkt_cap is not None else None,
                 "adj_factor": r.get("AdjFactor"),
             }
         )
