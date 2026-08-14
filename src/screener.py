@@ -83,8 +83,14 @@ def run_screening(conn: sqlite3.Connection, run_id: str, as_of_date: Optional[st
     passed_rows = []
     all_result_rows = []
     for code in codes:
-        snapshot = build_indicator_snapshot(conn, code, as_of)
-        ok, reasons = _passes_hard_filters(snapshot)
+        # 1銘柄のデータ異常（想定外の型・欠損の組み合わせ等）で
+        # スクリーニング全体を止めないよう、銘柄単位で例外を隔離する。
+        try:
+            snapshot = build_indicator_snapshot(conn, code, as_of)
+            ok, reasons = _passes_hard_filters(snapshot)
+        except Exception as exc:  # noqa: BLE001
+            database.log_error(conn, run_id, "screener.run_screening", str(exc), code=code)
+            ok, reasons = False, [f"指標計算中にエラー: {exc}"]
         all_result_rows.append(
             {
                 "run_id": run_id,

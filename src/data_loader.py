@@ -46,6 +46,25 @@ def _today_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _to_float(value) -> Optional[float]:
+    """J-Quantsは未確定・非開示の数値項目を null ではなく文字列 "-" や空文字で
+    返すことがある（配当額のドキュメントに明記されているが、決算数値でも
+    同様の挙動が確認された）。そのまま float 演算に渡すと成長率計算等で
+    例外になり、1銘柄の不正値でパイプライン全体が落ちてしまうため、
+    ここで一括して数値かNoneに正規化する。"""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text in ("", "-", "－", "―"):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _is_excluded_company(name: str, product_category: Optional[str]) -> bool:
     name = name or ""
     if any(kw in name for kw in settings.EXCLUDE_NAME_KEYWORDS):
@@ -149,28 +168,28 @@ def _quotes_to_rows(records: list[dict]) -> list[dict]:
         date = r.get("Date")
         if not code or not date:
             continue
-        mkt_cap = r.get("MktCap")
+        mkt_cap = _to_float(r.get("MktCap"))
         rows.append(
             {
                 "code": code,
                 "date": date,
-                "open": r.get("O"),
-                "high": r.get("H"),
-                "low": r.get("L"),
-                "close": r.get("C"),
-                "adj_open": r.get("AdjO"),
-                "adj_high": r.get("AdjH"),
-                "adj_low": r.get("AdjL"),
-                "adj_close": r.get("AdjC"),
-                "volume": r.get("Vo"),
-                "adj_volume": r.get("AdjVo"),
-                "turnover_value": r.get("Va"),
+                "open": _to_float(r.get("O")),
+                "high": _to_float(r.get("H")),
+                "low": _to_float(r.get("L")),
+                "close": _to_float(r.get("C")),
+                "adj_open": _to_float(r.get("AdjO")),
+                "adj_high": _to_float(r.get("AdjH")),
+                "adj_low": _to_float(r.get("AdjL")),
+                "adj_close": _to_float(r.get("AdjC")),
+                "volume": _to_float(r.get("Vo")),
+                "adj_volume": _to_float(r.get("AdjVo")),
+                "turnover_value": _to_float(r.get("Va")),
                 # J-QuantsのMktCapは「百万円」単位で返る。DB(prices.market_cap)は
                 # 円単位に統一する（indicators.calc_market_cap や config.settings の
                 # MIN/MAX_MARKET_CAP も円単位のため、ここで揃えないと時価総額
                 # フィルタが常に0件になる）。
                 "market_cap": (mkt_cap * 1_000_000) if mkt_cap is not None else None,
-                "adj_factor": r.get("AdjFactor"),
+                "adj_factor": _to_float(r.get("AdjFactor")),
             }
         )
     return rows
@@ -220,22 +239,22 @@ def load_financials(client: JQuantsClient, conn: sqlite3.Connection, run_id: str
                 "period_type": r.get("CurPerType") or "NA",
                 "period_start": r.get("CurPerSt"),
                 "period_end": r.get("CurPerEn"),
-                "sales": r.get("Sales"),
-                "operating_profit": r.get("OP"),
-                "ordinary_profit": r.get("OdP"),
-                "net_profit": r.get("NP"),
-                "eps": r.get("EPS"),
-                "total_assets": r.get("TA"),
-                "equity": r.get("Eq"),
-                "equity_ratio": r.get("EqAR"),
-                "bps": r.get("BPS"),
-                "roe": r.get("ROE"),
-                "forecast_sales": r.get("FSales"),
-                "forecast_operating_profit": r.get("FOP"),
-                "forecast_ordinary_profit": r.get("FOdP"),
-                "forecast_net_profit": r.get("FNP"),
-                "forecast_eps": r.get("FEPS"),
-                "shares_outstanding": r.get("ShOutFY"),
+                "sales": _to_float(r.get("Sales")),
+                "operating_profit": _to_float(r.get("OP")),
+                "ordinary_profit": _to_float(r.get("OdP")),
+                "net_profit": _to_float(r.get("NP")),
+                "eps": _to_float(r.get("EPS")),
+                "total_assets": _to_float(r.get("TA")),
+                "equity": _to_float(r.get("Eq")),
+                "equity_ratio": _to_float(r.get("EqAR")),
+                "bps": _to_float(r.get("BPS")),
+                "roe": _to_float(r.get("ROE")),
+                "forecast_sales": _to_float(r.get("FSales")),
+                "forecast_operating_profit": _to_float(r.get("FOP")),
+                "forecast_ordinary_profit": _to_float(r.get("FOdP")),
+                "forecast_net_profit": _to_float(r.get("FNP")),
+                "forecast_eps": _to_float(r.get("FEPS")),
+                "shares_outstanding": _to_float(r.get("ShOutFY")),
                 "raw_json": database.to_json(r),
             }
         )
