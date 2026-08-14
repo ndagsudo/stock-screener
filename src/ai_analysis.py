@@ -201,7 +201,14 @@ def _needs_reanalysis(conn: sqlite3.Connection, code: str, snap: dict, input_has
     return False
 
 
-def _call_anthropic(payload: dict) -> Optional[dict]:
+def _call_anthropic(
+    payload: dict, conn: Optional[sqlite3.Connection] = None, run_id: Optional[str] = None
+) -> Optional[dict]:
+    """Anthropic APIを呼び出す。ここで発生するあらゆる例外
+    （クレジット不足・レート制限・ネットワーク障害・SDK未インストール等）は
+    握りつぶして None を返す。AI分析はあくまで数値ランキング確定後の付加機能で
+    あり、その失敗でパイプライン全体（数値スクリーニング・スコアリング・
+    ランキング・サイト生成）を巻き込んで落としてはならない。"""
     if not settings.ANTHROPIC_API_KEY:
         return None
     try:
@@ -209,24 +216,29 @@ def _call_anthropic(payload: dict) -> Optional[dict]:
     except ImportError:
         return None
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    user_message = (
-        "以下は数値スクリーニングを通過した銘柄の構造化データです。"
-        "record_analysis ツールを使って分析結果を記録してください。\n\n"
-        + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-    )
-    response = client.messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=2000,
-        system=SYSTEM_PROMPT,
-        tools=[ANALYSIS_TOOL],
-        tool_choice={"type": "tool", "name": "record_analysis"},
-        messages=[{"role": "user", "content": user_message}],
-    )
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "record_analysis":
-            return block.input
-    return None
+    try:
+        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        user_message = (
+            "以下は数値スクリーニングを通過した銘柄の構造化データです。"
+            "record_analysis ツールを使って分析結果を記録してください。\n\n"
+            + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+        )
+        response = client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=2000,
+            system=SYSTEM_PROMPT,
+            tools=[ANALYSIS_TOOL],
+            tool_choice={"type": "tool", "name": "record_analysis"},
+            messages=[{"role": "user", "content": user_message}],
+        )
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "record_analysis":
+                return block.input
+        return None
+    except Exception as exc:  # noqa: BLE001
+        if conn is not None and run_id is not None:
+            database.log_error(conn, run_id, "ai_analysis._call_anthropic", str(exc), code=payload.get("code"))
+        return None
 
 
 def analyze_and_cache(
@@ -246,7 +258,7 @@ def analyze_and_cache(
     if not _needs_reanalysis(conn, code, snap, input_hash, rank_jump):
         return None
 
-    result = _call_anthropic(payload)
+    result = _call_anthropic(payload, conn=conn, run_id=run_id)
     now = datetime.now(timezone.utc).isoformat()
 
     if result is None:

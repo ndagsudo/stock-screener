@@ -129,11 +129,16 @@ def run_pipeline(
             }
 
             # 8. AI分析（対象限定・キャッシュ考慮）
-            ai_targets = ai_analysis.select_ai_targets(top_scored, rank_jumpers=list(rank_jumps.keys()))
-            for t in ai_targets:
-                t["rank"] = rank_by_code.get(t["code"])
-            ai_count = ai_analysis.run_ai_analysis(conn, run_id, ai_targets, rank_jumps=rank_jumps)
-            summary["ai_analyzed"] = ai_count
+            # AI分析はあくまで付加機能であり、失敗しても数値ランキング・
+            # サイト生成（この後のステップ）は必ず完走させる。
+            try:
+                ai_targets = ai_analysis.select_ai_targets(top_scored, rank_jumpers=list(rank_jumps.keys()))
+                for t in ai_targets:
+                    t["rank"] = rank_by_code.get(t["code"])
+                summary["ai_analyzed"] = ai_analysis.run_ai_analysis(conn, run_id, ai_targets, rank_jumps=rank_jumps)
+            except Exception as exc:  # noqa: BLE001
+                database.log_error(conn, run_id, "main.ai_analysis", str(exc))
+                summary["ai_analyzed"] = 0
 
             # 9. 実績検証: 今週のweekly_top10を将来の検証対象として登録し、
             #    到来済みホライズンの実績を更新する
