@@ -9,12 +9,18 @@
   5. スコア計算                 (scoring)
   6. 5年シミュレーション         (forecast)
   7. ランキング生成・順位変動    (ranking)
-  8. 必要な銘柄だけAI分析        (ai_analysis)
+  8. AIレビュー用データのエクスポート (ai_analysis)
   9. 過去ランキングの実績評価    (performance)
   10. HTML生成                  (report)
 
 途中で1銘柄のデータが欠けていても全体を止めない。致命的な例外だけ
 updates テーブルに status='failed' として記録して再送出する。
+
+【重要】このパイプラインは Anthropic API を一切呼び出さない。ステップ8は
+スコア上位銘柄について「AIに渡すデータ＋調査してほしい観点」をテキスト
+ファイルに書き出すだけで、APIキーもAPIクレジットも不要。実際の定性分析は
+利用者が手動で（Claude Code 等で）行い、scripts/import_ai_analysis.py で
+結果をDBに取り込む。
 """
 from __future__ import annotations
 
@@ -128,16 +134,22 @@ def run_pipeline(
                 if r["prev_rank"] is not None and (r["prev_rank"] - r["rank"]) > 0
             }
 
-            # 8. AI分析（対象限定・キャッシュ考慮）
-            # AI分析はあくまで付加機能であり、失敗しても数値ランキング・
-            # サイト生成（この後のステップ）は必ず完走させる。
+            # 8. AIレビュー用データのエクスポート（Anthropic API呼び出しなし）
+            # スコア上位銘柄について「渡すデータ＋調査観点」をテキストファイルに
+            # 書き出すだけ。実際の分析は利用者が手動で行う
+            # （data/ai_review/{run_id}/{code}.txt を参照）。
             try:
                 ai_targets = ai_analysis.select_ai_targets(top_scored, rank_jumpers=list(rank_jumps.keys()))
                 for t in ai_targets:
                     t["rank"] = rank_by_code.get(t["code"])
-                summary["ai_analyzed"] = ai_analysis.run_ai_analysis(conn, run_id, ai_targets, rank_jumps=rank_jumps)
+                export_results = ai_analysis.export_targets_for_manual_review(
+                    conn, run_id, ai_targets, rank_jumps=rank_jumps
+                )
+                summary["ai_export_count"] = sum(1 for r in export_results if r["status"] == "exported")
+                summary["ai_analyzed"] = summary["ai_export_count"]  # updatesテーブルの列名は維持
             except Exception as exc:  # noqa: BLE001
                 database.log_error(conn, run_id, "main.ai_analysis", str(exc))
+                summary["ai_export_count"] = 0
                 summary["ai_analyzed"] = 0
 
             # 9. 実績検証: 今週のweekly_top10を将来の検証対象として登録し、

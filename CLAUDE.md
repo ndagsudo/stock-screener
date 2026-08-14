@@ -25,6 +25,15 @@
   させない。
 - 新機能を追加する際、「AIが〜を判断する」という設計になっていないか必ず
   確認すること。判断・計算はPython、説明・整理はAI。
+- **このプロジェクトは Anthropic API を直接呼び出さない（手動レビュー方式）。**
+  利用者が「Anthropic APIの追加クレジットを購入しない／Claude Proの範囲で
+  利用する」という明示的な方針を選んだため、`src/ai_analysis.py` に
+  `anthropic` パッケージへの依存やAPI呼び出しコードを再度追加しないこと。
+  週次パイプラインは上位候補について「AIに渡すデータ＋調査観点」を
+  `data/ai_review/{run_id}/{code}.txt` に書き出すだけ（`export_targets_for_manual_review()`）。
+  実際の分析は利用者がClaude Code等で手動実行し、
+  `scripts/import_ai_analysis.py` → `save_manual_analysis()` でDBに取り込む。
+  この方針を変更する場合は必ず利用者の明示的な承認を得ること。
 
 ## アーキテクチャ
 
@@ -36,8 +45,8 @@
   変更は原則として行わないこと。
 - パイプラインの実行順序は `src/main.py` の `run_pipeline()` を参照:
   データ取得 → 指標計算・スクリーニング → スコアリング → 5年シミュレーション
-  → ランキング生成・順位変動記録 → AI分析（キャッシュ考慮） → 実績検証
-  → HTML生成。
+  → ランキング生成・順位変動記録 → AIレビュー用データのエクスポート
+  （Anthropic API呼び出しなし） → 実績検証 → HTML生成。
 
 ## データ処理ルール
 
@@ -76,18 +85,22 @@
 
 ## AI分析のルール
 
-- `src/ai_analysis.py` の `SYSTEM_PROMPT` / `ANALYSIS_TOOL` を変更する場合も、
-  上記の役割分担・断定禁止・情報源不明時の扱い（「情報を確認できませんでした」）
-  を必ず維持すること。
+- `src/ai_analysis.py` の `REVIEW_INSTRUCTIONS` / `RESEARCH_QUESTIONS` /
+  `ANALYSIS_SCHEMA_DESCRIPTION` を変更する場合も、上記の役割分担・断定禁止・
+  情報源不明時の扱い（「情報を確認できませんでした」）を必ず維持すること。
 - 受注・市場シェア・特定顧客・契約内容・将来の設備投資計画など、根拠のない
   具体的事実を書かせない。
-- AI分析結果は必ずキャッシュし、`config/settings.py` の
-  `AI_REANALYSIS_*` 条件に該当する場合のみ再分析する（無駄なAPI呼び出しの防止）。
+- 分析結果は必ずキャッシュし、`config/settings.py` の
+  `AI_REANALYSIS_*` 条件に該当する場合のみ再エクスポート対象にする
+  （利用者の手動レビューの手間を無駄に増やさないため）。
+- `export_targets_for_manual_review()` は純粋なファイル書き込みのみで、
+  ネットワーク通信・外部API呼び出しを一切行わないこと。
 
 ## 秘密情報管理
 
-- APIキーをコードに直接書かない。`JQUANTS_API_KEY` / `ANTHROPIC_API_KEY` は
-  必ず環境変数（ローカルは `.env`、GitHub Actionsは Secrets）から読む。
+- APIキーをコードに直接書かない。`JQUANTS_API_KEY` は必ず環境変数
+  （ローカルは `.env`、GitHub Actionsは Secrets）から読む。
+- AI分析はAnthropic APIを呼び出さないため、AI用のAPIキーは存在しない。
 - `.env` は `.gitignore` 済み。ログにAPIキーを出力しない。
 
 ## テスト方法

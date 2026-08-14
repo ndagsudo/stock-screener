@@ -133,9 +133,27 @@
   <p class="ai-disclaimer">
     このAI分析は「強気材料・弱気材料・確認事項」の整理であり、投資助言・売買推奨ではありません。
     数値（スコア・PER・成長率等）は全てPythonで計算済みのものをAIに渡しており、AI自身が計算したものではありません。
+    このサイトはAnthropic APIを自動呼び出しせず、この分析は利用者が手動で行ったものです。
   </p>
+
+  {% if stock.manual_review_prompt %}
+  <details class="manual-review">
+    <summary>🔄 この内容を更新したい場合（再分析用データを表示）</summary>
+    {% include "_manual_review_prompt.html" %}
+  </details>
+  {% endif %}
+
   {% else %}
-  <p class="empty">この銘柄はまだAI分析の対象になっていません（AI分析はスコア上位・大幅順位上昇銘柄が対象です）。</p>
+  {% if stock.manual_review_prompt %}
+  <p class="note">
+    この銘柄はAIレビュー対象です。以下のテキストをコピーして Claude Code のチャット等に貼り付け、
+    返ってきた結果を <code>scripts/import_ai_analysis.py</code> で取り込むとここに表示されます
+    （Anthropic APIキー・APIクレジットは不要です）。
+  </p>
+  {% include "_manual_review_prompt.html" %}
+  {% else %}
+  <p class="empty">この銘柄はまだAIレビュー対象になっていません（対象はスコア上位・大幅順位上昇銘柄です）。</p>
+  {% endif %}
   {% endif %}
 </section>
 

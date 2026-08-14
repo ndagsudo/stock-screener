@@ -1,5 +1,5 @@
 """
-AIによる定性分析。
+AIによる定性分析（手動レビュー方式）。
 
 【最重要】AIはランキングを決める主体ではない。数値スクリーニング・スコアリング・
 5年シミュレーションはすべて Python (screener.py / scoring.py / forecast.py) が
@@ -8,7 +8,15 @@ AIによる定性分析。
 禁止する。情報源が不明な場合は「情報を確認できませんでした」と出力させ、
 受注・市場シェア・顧客・契約・将来計画・設備投資などを根拠なく記載しない。
 
-ANTHROPIC_API_KEY が無い環境でもパイプライン全体（数値ランキングまで）は
+【重要な設計変更】このモジュールは Anthropic API を直接呼び出さない。
+週次パイプライン（GitHub Actions）から Anthropic の API キー・APIクレジットへの
+依存を完全に排除するため、「AIに渡す構造化データ＋調査してほしい観点」を
+テキストファイルとして書き出すところまでを自動化し、実際の分析は利用者が
+手動で（Claude Code のチャット等、Claude Pro の範囲で）行う。分析結果は
+save_manual_analysis() 経由で DB に保存する（scripts/import_ai_analysis.py が
+そのCLIエントリポイント）。
+
+これにより、パイプライン全体（数値ランキングまで）はAPIキーが一切無い環境でも
 正常に動作する。
 """
 from __future__ import annotations
@@ -17,88 +25,70 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings
 from src import database
 
-SYSTEM_PROMPT = """あなたは日本株の企業分析を手伝うリサーチアシスタントです。
-渡されるのは、Pythonによる客観的な数値スクリーニング・スコアリングを既に通過した
+# 利用者から提示された「なぜこの会社が面白いのか」を調べる際の観点。
+# 数値計算はさせず、あくまで定性的な調査・整理の指針として使う。
+RESEARCH_QUESTIONS = [
+    "この会社が市場から過小評価されている可能性はあるか",
+    "今後3〜5年で利益が伸びる理由は何か",
+    "その成長の源泉は何か（新製品・新市場・構造変化など）",
+    "競合と比較して何が優れているか",
+    "参入障壁はあるか",
+    "ニッチトップ企業か",
+    "海外投資家から評価される可能性はあるか",
+    "株価が再評価されるきっかけ（カタリスト）は何か",
+    "経営陣・資本政策に問題はないか",
+    "成長ストーリーが崩れるリスクは何か",
+    "現在の株価に成長期待がどの程度織り込まれているか",
+    "3〜5年後に利益がどの程度伸びる可能性があるか",
+]
+
+ANALYSIS_SCHEMA_DESCRIPTION = """出力は以下のキーを持つJSONオブジェクト1つだけにしてください（前後に説明文を付けない）:
+
+{
+  "why_notable": "なぜこの会社が注目されているかの要約（2〜4文、string）",
+  "bull_points": ["強気材料（最大5件、string配列）"],
+  "bear_points": ["弱気材料（最大4件、string配列）"],
+  "checkpoints": ["次回決算などで確認すべきポイント（最大3件、string配列）"],
+  "growth_drivers": ["事業の成長ドライバー（string配列）"],
+  "competitive_advantages": ["競争優位性（string配列）"],
+  "overall_comment": "総合コメント（断定を避けた要約、string）",
+  "confidence_note": "情報を確認できなかった主要項目があれば明記。無ければ空文字（string）"
+}"""
+
+REVIEW_INSTRUCTIONS = """あなたは日本株の企業分析を手伝うリサーチアシスタントです。
+以下は、Pythonによる客観的な数値スクリーニング・スコアリングを既に通過した
 1銘柄分の構造化データです。あなたの役割はランキングを決めることでも、
 「買い」「売り」「絶対に上がる」といった投資判断を下すことでもありません。
-役割は次の1点だけです:
 
-この会社について、なぜ興味深い可能性があるのかを、
-・強気材料（成長性を支持する材料）
-・弱気材料（懸念点・リスク）
-・次回決算などで確認すべきポイント
-・事業の成長ドライバー
-・競争優位性
-に整理して説明することです。
+役割は次の1点だけです: この会社について、なぜ興味深い可能性があるのかを、
+下記の観点を参考にしながら調査し整理することです。
 
-厳守事項:
-1. 数値計算は一切行わない（PER・成長率・スコア等は既にPythonで計算済み、渡された値をそのまま参照するに留める）。
+【調査してほしい観点】
+{questions}
+
+【厳守事項】
+1. 数値計算は一切行わない（PER・成長率・スコア等は下記データで既にPython側で
+   計算済み。渡された値をそのまま参照するに留める）。
 2. 「買い」「売り」「絶対上がる」「〜倍になる」等の断定的な投資助言・株価予測をしない。
 3. 受注・市場シェア・特定の顧客名・契約内容・将来の設備投資計画など、
-   渡されたデータや広く確認できる公知の事実から確認できない具体的事項は書かない。
-   確認できない場合は該当項目に「情報を確認できませんでした」と明記する。
+   確認できない具体的事実は書かない。確認できない場合は該当項目に
+   「情報を確認できませんでした」と明記する。
 4. 架空の情報を作らない。憶測は「一般的に推測される」等、事実と明確に区別する。
-5. 出力は必ず record_analysis ツールを使い、指定されたフィールドに日本語で記入する。
-"""
 
-ANALYSIS_TOOL = {
-    "name": "record_analysis",
-    "description": "1銘柄分の定性分析結果を構造化して記録する。",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "why_notable": {"type": "string", "description": "なぜこの会社が注目されているかの要約（2〜4文）"},
-            "bull_points": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "強気材料（最大5件）",
-            },
-            "bear_points": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "弱気材料（最大4件）",
-            },
-            "checkpoints": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "次回決算などで確認すべきポイント（最大3件）",
-            },
-            "growth_drivers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "事業の成長ドライバー",
-            },
-            "competitive_advantages": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "競争優位性",
-            },
-            "overall_comment": {"type": "string", "description": "AIによる総合コメント（断定を避けた要約）"},
-            "confidence_note": {
-                "type": "string",
-                "description": "情報を確認できなかった主要な項目があれば明記。なければ空文字。",
-            },
-        },
-        "required": [
-            "why_notable",
-            "bull_points",
-            "bear_points",
-            "checkpoints",
-            "growth_drivers",
-            "competitive_advantages",
-            "overall_comment",
-        ],
-    },
-}
+【この銘柄の数値データ（Pythonで計算済み・そのまま参照）】
+{payload_json}
+
+{schema}
+"""
 
 
 def _pct(v: Optional[float]) -> str:
@@ -146,12 +136,18 @@ def build_prompt_payload(snap: dict, scored: dict) -> dict:
             "price_position": scored.get("price_position_score"),
         },
         "sector33": snap.get("sector33_name"),
-        "note_to_ai": (
-            "上記は全てPythonで計算済みの客観的な数値データです。"
-            "この数値そのものの再計算は不要です。この会社が数値上なぜ興味深いのかを踏まえつつ、"
-            "事業内容・強み・リスクについて、確認できる範囲の情報だけを使って整理してください。"
-        ),
     }
+
+
+def build_manual_review_prompt(snap: dict, scored: dict) -> str:
+    """Claude Code 等に貼り付けてそのまま使える、1銘柄分のレビュー依頼テキストを組み立てる。
+    Anthropic API は一切呼び出さない（純粋な文字列整形のみ、コスト・APIキー不要）。"""
+    payload = build_prompt_payload(snap, scored)
+    questions = "\n".join(f"{i}. {q}" for i, q in enumerate(RESEARCH_QUESTIONS, start=1))
+    payload_json = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    return REVIEW_INSTRUCTIONS.format(
+        questions=questions, payload_json=payload_json, schema=ANALYSIS_SCHEMA_DESCRIPTION
+    )
 
 
 def compute_input_hash(payload: dict) -> str:
@@ -160,7 +156,8 @@ def compute_input_hash(payload: dict) -> str:
 
 
 def select_ai_targets(overall_candidates: list[dict], rank_jumpers: Optional[list[str]] = None) -> list[dict]:
-    """AI分析対象を選定する: スコア上位AI_ANALYSIS_CANDIDATES件 + 大幅順位上昇/決算大幅改善銘柄。"""
+    """AIレビュー対象を選定する: スコア上位AI_ANALYSIS_CANDIDATES件 + 大幅順位上昇銘柄。
+    ここで選ばれた銘柄だけがエクスポート対象になる。AI自身が対象を選ぶことはない。"""
     by_score = sorted(overall_candidates, key=lambda c: c["total_score"], reverse=True)
     top = by_score[: settings.AI_ANALYSIS_CANDIDATES]
     selected = {c["code"]: c for c in top}
@@ -174,7 +171,9 @@ def select_ai_targets(overall_candidates: list[dict], rank_jumpers: Optional[lis
     return list(selected.values())
 
 
-def _needs_reanalysis(conn: sqlite3.Connection, code: str, snap: dict, input_hash: str, rank_jump: int = 0) -> bool:
+def _needs_review(conn: sqlite3.Connection, code: str, snap: dict, input_hash: str, rank_jump: int = 0) -> bool:
+    """既存のキャッシュ済み分析が十分新しければ再エクスポートをスキップする
+    （手動レビューの手間を無駄に増やさないため）。"""
     row = conn.execute(
         "SELECT * FROM ai_analyses WHERE code = ? ORDER BY created_at DESC LIMIT 1", (code,)
     ).fetchone()
@@ -201,79 +200,77 @@ def _needs_reanalysis(conn: sqlite3.Connection, code: str, snap: dict, input_has
     return False
 
 
-def _call_anthropic(
-    payload: dict, conn: Optional[sqlite3.Connection] = None, run_id: Optional[str] = None
-) -> Optional[dict]:
-    """Anthropic APIを呼び出す。ここで発生するあらゆる例外
-    （クレジット不足・レート制限・ネットワーク障害・SDK未インストール等）は
-    握りつぶして None を返す。AI分析はあくまで数値ランキング確定後の付加機能で
-    あり、その失敗でパイプライン全体（数値スクリーニング・スコアリング・
-    ランキング・サイト生成）を巻き込んで落としてはならない。"""
-    if not settings.ANTHROPIC_API_KEY:
-        return None
-    try:
-        import anthropic
-    except ImportError:
-        return None
-
-    try:
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        user_message = (
-            "以下は数値スクリーニングを通過した銘柄の構造化データです。"
-            "record_analysis ツールを使って分析結果を記録してください。\n\n"
-            + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-        )
-        response = client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=2000,
-            system=SYSTEM_PROMPT,
-            tools=[ANALYSIS_TOOL],
-            tool_choice={"type": "tool", "name": "record_analysis"},
-            messages=[{"role": "user", "content": user_message}],
-        )
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "record_analysis":
-                return block.input
-        return None
-    except Exception as exc:  # noqa: BLE001
-        if conn is not None and run_id is not None:
-            database.log_error(conn, run_id, "ai_analysis._call_anthropic", str(exc), code=payload.get("code"))
-        return None
-
-
-def analyze_and_cache(
+def export_targets_for_manual_review(
     conn: sqlite3.Connection,
     run_id: str,
-    snap: dict,
-    scored: dict,
+    targets: list[dict],
+    rank_jumps: Optional[dict] = None,
+    output_dir: Optional[Path] = None,
+) -> list[dict]:
+    """targets: [{**snapshot, **scored, 'rank': int}, ...]。
+    Anthropic APIを一切呼び出さず、レビュー依頼テキストをファイルに書き出すだけ。
+    戻り値は各銘柄の {code, path, status} のリスト（status: 'exported' | 'skipped_fresh'）。"""
+    rank_jumps = rank_jumps or {}
+    output_dir = output_dir or (settings.DATA_DIR / "ai_review" / run_id)
+    results = []
+    exported_index = []
+
+    for t in targets:
+        code = t["code"]
+        payload = build_prompt_payload(t, t)
+        input_hash = compute_input_hash(payload)
+        if not _needs_review(conn, code, t, input_hash, rank_jumps.get(code, 0)):
+            results.append({"code": code, "path": None, "status": "skipped_fresh"})
+            continue
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        prompt_text = build_manual_review_prompt(t, t)
+        file_path = output_dir / f"{code}.txt"
+        file_path.write_text(prompt_text, encoding="utf-8")
+        results.append({"code": code, "path": str(file_path), "status": "exported"})
+        exported_index.append(
+            {"code": code, "name": t.get("name"), "score": t.get("total_score"), "file": f"{code}.txt"}
+        )
+
+    if exported_index:
+        index_path = output_dir / "_index.json"
+        index_path.write_text(database.to_json(exported_index), encoding="utf-8")
+
+    return results
+
+
+def save_manual_analysis(
+    conn: sqlite3.Connection,
+    run_id: str,
+    code: str,
+    result: dict,
     rank_at_analysis: Optional[int] = None,
-    rank_jump: int = 0,
-) -> Optional[int]:
-    """必要なら再分析してキャッシュに保存する。分析をスキップ/再利用した場合は None。
-    戻り値は新規保存した ai_analyses.id、または None。"""
-    code = snap["code"]
-    payload = build_prompt_payload(snap, scored)
-    input_hash = compute_input_hash(payload)
+    reviewer: str = "Claude Code（手動レビュー）",
+) -> int:
+    """手動で行ったAI定性分析の結果をDBに保存する。result は
+    ANALYSIS_SCHEMA_DESCRIPTION に沿った辞書（why_notable/bull_points/...）。
+    scripts/import_ai_analysis.py から呼ばれる。"""
+    required_keys = [
+        "why_notable",
+        "bull_points",
+        "bear_points",
+        "checkpoints",
+        "growth_drivers",
+        "competitive_advantages",
+        "overall_comment",
+    ]
+    missing = [k for k in required_keys if k not in result]
+    if missing:
+        raise ValueError(f"分析結果に必須フィールドが不足しています: {missing}")
 
-    if not _needs_reanalysis(conn, code, snap, input_hash, rank_jump):
-        return None
+    scored_row = conn.execute(
+        "SELECT indicators_json FROM screening_scores WHERE code = ? AND run_id = ?", (code, run_id)
+    ).fetchone()
+    snap = database.from_json(scored_row["indicators_json"], {}) if scored_row else {}
 
-    result = _call_anthropic(payload, conn=conn, run_id=run_id)
     now = datetime.now(timezone.utc).isoformat()
-
-    if result is None:
-        # APIキー未設定 or 呼び出し失敗: 「情報を確認できませんでした」として保存し、
-        # サイト全体は数値ランキングだけで正常に動作させる。
-        result = {
-            "why_notable": "情報を確認できませんでした（AI分析が未実行です）。",
-            "bull_points": [],
-            "bear_points": [],
-            "checkpoints": [],
-            "growth_drivers": [],
-            "competitive_advantages": [],
-            "overall_comment": "情報を確認できませんでした。",
-            "confidence_note": "ANTHROPIC_API_KEY が未設定、またはAI呼び出しに失敗しました。",
-        }
+    payload = build_prompt_payload(snap, snap)
+    input_hash = compute_input_hash(payload)
 
     cur = conn.execute(
         """
@@ -295,7 +292,7 @@ def analyze_and_cache(
             database.to_json(result.get("growth_drivers", [])),
             database.to_json(result.get("competitive_advantages", [])),
             result.get("overall_comment", ""),
-            settings.ANTHROPIC_MODEL if settings.ANTHROPIC_API_KEY else "none",
+            reviewer,
             input_hash,
             snap.get("latest_disclosure_date"),
             rank_at_analysis,
@@ -304,7 +301,6 @@ def analyze_and_cache(
     )
     analysis_id = cur.lastrowid
 
-    # 情報源: J-Quants由来の開示データは常に一次情報として記録する。
     conn.execute(
         """
         INSERT INTO sources (analysis_id, code, source_type, title, url, retrieved_date)
@@ -319,6 +315,21 @@ def analyze_and_cache(
             snap.get("as_of_date"),
         ),
     )
+    for src in result.get("sources", []):
+        conn.execute(
+            """
+            INSERT INTO sources (analysis_id, code, source_type, title, url, retrieved_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                analysis_id,
+                code,
+                src.get("source_type", "other"),
+                src.get("title", ""),
+                src.get("url", ""),
+                src.get("retrieved_date", now[:10]),
+            ),
+        )
     return analysis_id
 
 
@@ -339,22 +350,3 @@ def get_latest_analysis(conn: sqlite3.Connection, code: str) -> Optional[dict]:
     ).fetchall()
     d["sources"] = [dict(s) for s in sources]
     return d
-
-
-def run_ai_analysis(conn: sqlite3.Connection, run_id: str, targets: list[dict], rank_jumps: Optional[dict] = None) -> int:
-    """targets: [{**snapshot, **scored, 'rank': int}, ...]。分析件数を返す。"""
-    rank_jumps = rank_jumps or {}
-    analyzed = 0
-    for t in targets:
-        code = t["code"]
-        aid = analyze_and_cache(
-            conn,
-            run_id,
-            t,
-            t,
-            rank_at_analysis=t.get("rank"),
-            rank_jump=rank_jumps.get(code, 0),
-        )
-        if aid is not None:
-            analyzed += 1
-    return analyzed

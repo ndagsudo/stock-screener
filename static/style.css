@@ -117,6 +117,22 @@ progress { width: 100%; height: 12px; }
 .ai-disclaimer { font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 20px; }
 .sources { font-size: 0.85rem; }
 
+.manual-review { margin-top: 16px; }
+.manual-review summary { cursor: pointer; color: var(--primary); font-weight: 700; }
+.manual-review-box { margin-top: 10px; }
+.manual-review-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.copy-btn {
+  background: var(--primary); color: #fff; border: none; border-radius: 6px;
+  padding: 6px 14px; font-size: 0.85rem; cursor: pointer;
+}
+.copy-btn:hover { opacity: 0.9; }
+.copy-hint { font-size: 0.78rem; color: var(--text-muted); }
+.review-prompt {
+  background: #1f2733; color: #e8ecf1; padding: 14px; border-radius: 8px;
+  font-size: 0.78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  max-height: 420px; overflow-y: auto;
+}
+
 .rank-tags .tag { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; margin-right: 6px; }
 
 .empty { color: var(--text-muted); font-style: italic; }

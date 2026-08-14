@@ -6,7 +6,7 @@
   <h1>日本中小型株スクリーナー</h1>
   <p class="hero-sub">利益成長に対してまだ株価が織り込んでいない中小型株を、Pythonの数値スクリーニングで毎週自動発掘。AIは「なぜ面白いか」を整理するだけで、ランキングは決めません。</p>
   {% if run.run_update %}
-  <p class="last-updated">最終更新: {{ run.run_id }}（{{ run.run_update.status }} / 候補 {{ run.run_update.candidates_screened }}銘柄 → スコアリング {{ run.run_update.candidates_scored }}銘柄 → AI分析 {{ run.run_update.ai_analyzed }}銘柄）</p>
+  <p class="last-updated">最終更新: {{ run.run_id }}（{{ run.run_update.status }} / 候補 {{ run.run_update.candidates_screened }}銘柄 → スコアリング {{ run.run_update.candidates_scored }}銘柄 → AIレビュー対象抽出 {{ run.run_update.ai_analyzed }}銘柄）</p>
   {% else %}
   <p class="last-updated">まだデータがありません。GitHub Actions の初回実行後に表示されます。</p>
   {% endif %}

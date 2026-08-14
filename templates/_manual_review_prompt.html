@@ -1,0 +1,12 @@
+{# 手動AIレビュー用プロンプトの共通表示パーツ。stock.manual_review_prompt が渡されている前提。 #}
+<div class="manual-review-box">
+  <div class="manual-review-actions">
+    <button type="button" class="copy-btn" data-copy-target="review-prompt-{{ stock.company.code }}">コピー</button>
+    <span class="copy-hint">↑ コピーして Claude Code 等のチャットに貼り付けてください</span>
+  </div>
+  <pre id="review-prompt-{{ stock.company.code }}" class="review-prompt">{{ stock.manual_review_prompt }}</pre>
+  <p class="note">
+    分析結果（JSON）を受け取ったら保存し、次のコマンドで取り込めます:<br>
+    <code>python scripts/import_ai_analysis.py --code {{ stock.company.code }} --run-id {{ stock.run_id }} --file result.json</code>
+  </p>
+</div>

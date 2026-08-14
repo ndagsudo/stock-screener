@@ -13,23 +13,29 @@ miyagi-kids が「イベント情報を自動収集→条件で絞り込み→�
 市場データ収集
   → Pythonによる数値スクリーニング（100〜300銘柄に絞り込み）
   → 100点満点でスコアリング（上位50銘柄）
-  → 上位20銘柄程度をAIが定性分析
+  → 上位20銘柄程度を「AIレビュー対象」として抽出（ここまで完全自動・無料）
   → 今週の注目株 TOP10 として掲載
   → 翌週以降の順位変動を記録
   → 過去の予測が実際にどうなったかを検証
 ```
 
 を毎週自動で回します。**AIは銘柄を選びません。** ランキング・スコア・
-5年シミュレーションはすべてPythonの数値計算であり、AIは「数値スクリーニング
-を通過した候補について、なぜ面白い可能性があるのか」を強気材料・弱気材料・
-確認事項に整理する役割だけを担います。
+5年シミュレーションはすべてPythonの数値計算です。
+
+**AI定性分析は自動実行されません。** このサイトはAnthropic APIを直接
+呼び出さず、APIキー・APIクレジットを一切必要としません。上位候補について
+「AIに渡すデータ＋調査してほしい観点」をテキストとして書き出すところまでを
+自動化し、実際の分析（強気材料・弱気材料・成長ドライバー等の整理）は
+利用者が手動で（Claude Code のチャット等、Claude Pro の範囲内で）行います。
+詳しくは [AI分析（手動レビュー方式）](#ai分析手動レビュー方式) を参照してください。
 
 ## システム構成
 
 - 言語/DB: Python 3.11+ / SQLite（`data/stock.db`。リポジトリにコミットされ、
   週次実行のたびに更新されることで過去の記録を蓄積する）
 - データ取得: J-Quants API V2（https://jpx-jquants.com/）
-- AI分析: Anthropic API（任意。未設定でも数値ランキングまでは正常動作）
+- AI分析: Anthropic APIを自動呼び出ししない手動レビュー方式（Claude Code等で
+  利用者が手動実行。APIキー・APIクレジット不要）
 - サイト生成: Python + Jinja2 で静的HTMLを生成し GitHub Pages で公開
   （常駐サーバー・バックエンドAPIなし）
 - 自動更新: GitHub Actions（毎週土曜 07:00 JST）
@@ -46,13 +52,17 @@ stock-screener/
 │   ├── scoring.py         # 100点満点スコアリング
 │   ├── forecast.py        # 5年シミュレーション（弱気/標準/強気）
 │   ├── ranking.py         # カテゴリー別ランキング・順位変動
-│   ├── ai_analysis.py     # AIによる定性分析（キャッシュ付き）
+│   ├── ai_analysis.py     # AIレビュー用データのエクスポート・手動結果の取込（キャッシュ付き）
 │   ├── performance.py     # 過去予測の実績検証（look-ahead bias防止）
 │   ├── report.py          # 静的HTML生成
 │   └── main.py             # 週次パイプライン全体のオーケストレーター
+├── scripts/
+│   ├── seed_sample_data.py       # ローカル動作確認用の合成データ生成
+│   └── import_ai_analysis.py     # 手動AI分析結果をDBに取り込むCLI
 ├── templates/              # Jinja2テンプレート
 ├── static/                 # CSS/JS
 ├── site/                   # 生成された静的サイト（GitHub Pagesに公開）
+├── data/ai_review/         # AIレビュー用にエクスポートされたテキスト（run_idごと）
 ├── tests/                  # pytest（API非依存の単体テスト）
 └── .github/workflows/update.yml
 ```
@@ -64,7 +74,7 @@ cd stock-screener
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env       # JQUANTS_API_KEY / ANTHROPIC_API_KEY を記入
+cp .env.example .env       # JQUANTS_API_KEY を記入
 ```
 
 ## J-Quants API
@@ -91,23 +101,35 @@ cp .env.example .env       # JQUANTS_API_KEY / ANTHROPIC_API_KEY を記入
   数時間〜かかる。Light/Standard/Premiumプラン（60/120/500 req/分）に
   アップグレードした場合はこの値を大きくしてよい
 
-## AI API（任意）
+## AI分析（手動レビュー方式）
 
-- `ANTHROPIC_API_KEY` を設定すると、スコア上位銘柄（既定20件）＋
-  順位が大幅上昇した銘柄についてAIが定性分析を行う
-- 未設定でもサイト全体（数値ランキング・5年シミュレーション等）は正常に動作する
-- AI分析結果は `ai_analyses` テーブルにキャッシュされ、次の場合のみ再分析する:
-  新しい決算が開示された／順位が大きく変動した／一定期間（既定90日）が
-  経過した／入力データが変化した
+このプロジェクトは **Anthropic APIを直接呼び出しません**。APIキー・APIクレジットは
+一切不要です。仕組みは以下の通りです。
+
+1. 週次パイプライン（`python -m src.main`）が、スコア上位銘柄（既定20件）＋
+   順位が大幅上昇した銘柄について、「AIに渡すデータ＋調査してほしい観点」を
+   `data/ai_review/{run_id}/{code}.txt` にテキストとして書き出す
+   （純粋なファイル出力のみ。ネットワーク通信なし）
+2. そのテキストをコピーして、Claude Code のチャット等（Claude Pro の範囲内）に
+   貼り付けて分析してもらう。サイト上の銘柄詳細ページにも同じテキストと
+   「コピー」ボタンが表示される
+3. 返ってきた分析結果（JSON）をファイルに保存し、以下で取り込む:
+   ```bash
+   python scripts/import_ai_analysis.py --code 1234 --run-id 2026-08-15 --file result.json
+   python -m src.main --skip-fetch   # サイトに反映
+   ```
+4. 分析結果は `ai_analyses` テーブルにキャッシュされ、次の場合のみ再エクスポート
+   対象になる: 新しい決算が開示された／順位が大きく変動した／一定期間
+   （既定90日）が経過した／入力データが変化した
 
 ## 環境変数
 
 | 変数名 | 必須 | 説明 |
 |---|---|---|
 | `JQUANTS_API_KEY` | 実データ取得に必須 | J-Quants API V2 のAPIキー |
-| `ANTHROPIC_API_KEY` | 任意 | AI定性分析を有効化する場合に設定 |
 
 `.env` は `.gitignore` 済み。GitHub Actionsでは GitHub Secrets を使用する。
+AI分析用のAPIキーは存在しない（不要）。
 
 ## ローカル実行
 
@@ -146,11 +168,15 @@ pytest tests/ -v
 2. 財務指標計算・数値スクリーニング・スコアリング
 3. 5年シミュレーション
 4. ランキング生成・順位変動記録
-5. 必要な銘柄だけAI分析
+5. AIレビュー用データのエクスポート（`data/ai_review/`。Anthropic API呼び出しなし）
 6. 過去ランキングの実績評価
 7. HTML生成
-8. `data/stock.db` をリポジトリにコミット（履歴を消さないための唯一の永続化手段）
+8. `data/stock.db` と `data/ai_review/` をリポジトリにコミット
+   （履歴を消さないための唯一の永続化手段）
 9. `site/` を GitHub Pages にデプロイ
+
+このワークフローは `JQUANTS_API_KEY` のみを必要とし、Anthropic関連の
+Secretsは一切使いません。
 
 `workflow_dispatch` にも対応しているため、手動実行も可能です。
 
@@ -176,11 +202,16 @@ pytest tests/ -v
 
 ## AI分析
 
-数値スクリーニング・スコアリングが完了した後、上位候補についてだけAIが
+数値スクリーニング・スコアリングが完了した後、上位候補についてだけ
 「強気材料・弱気材料・確認すべき事項・成長ドライバー・競争優位性」を
-構造化して出力します。「買い」「売り」「絶対上がる」等の断定はさせず、
-受注・市場シェア・契約内容など根拠のない具体的事実は書かせません。
-確認できない場合は「情報を確認できませんでした」と表示されます。
+整理します（[AI分析（手動レビュー方式）](#ai分析手動レビュー方式)参照）。
+調査観点は「市場からの過小評価の可能性」「3〜5年の利益成長理由・源泉」
+「競争優位性・参入障壁」「海外投資家からの評価可能性」「株価再評価の
+カタリスト」「経営陣・資本政策のリスク」「成長ストーリーが崩れるリスク」
+「現在株価への期待の織り込み度合い」など12項目（`ai_analysis.RESEARCH_QUESTIONS`）。
+「買い」「売り」「絶対上がる」等の断定はさせず、受注・市場シェア・契約内容
+など根拠のない具体的事実は書かせません。確認できない場合は
+「情報を確認できませんでした」と表示されます。
 
 ## 5年シミュレーション
 

@@ -72,8 +72,50 @@
     drawLineChart(canvas, series, { title: "営業利益推移", color: "#c0392b" });
   }
 
+  function initCopyButtons() {
+    document.querySelectorAll(".copy-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const targetId = btn.getAttribute("data-copy-target");
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        const text = target.textContent || "";
+        const done = function () {
+          const original = btn.textContent;
+          btn.textContent = "コピーしました";
+          setTimeout(function () {
+            btn.textContent = original;
+          }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {
+            fallbackCopy(text, done);
+          });
+        } else {
+          fallbackCopy(text, done);
+        }
+      });
+    });
+  }
+
+  function fallbackCopy(text, done) {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (e) {
+      // コピーに失敗しても手動選択できるようテキストは表示済みのため何もしない
+    }
+    document.body.removeChild(textarea);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initPriceChart();
     initFinancialsChart();
+    initCopyButtons();
   });
 })();

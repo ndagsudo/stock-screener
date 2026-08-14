@@ -153,6 +153,11 @@ def load_stock_context(conn: sqlite3.Connection, code: str, run_id: Optional[str
 
     ai = ai_analysis.get_latest_analysis(conn, code)
 
+    scored_dict = dict(scored_row) if scored_row else None
+    manual_review_prompt = None
+    if indicators and scored_dict:
+        manual_review_prompt = ai_analysis.build_manual_review_prompt(indicators, scored_dict)
+
     rank_rows = conn.execute(
         """
         SELECT category, rank, rank_change, prev_rank FROM ranking_history
@@ -165,11 +170,12 @@ def load_stock_context(conn: sqlite3.Connection, code: str, run_id: Optional[str
         "company": dict(company),
         "run_id": run_id,
         "indicators": indicators,
-        "scored": dict(scored_row) if scored_row else None,
+        "scored": scored_dict,
         "forecasts": forecast_by_scenario,
         "financial_history": [dict(r) for r in fin_history],
         "price_history": [dict(r) for r in price_history],
         "ai": ai,
+        "manual_review_prompt": manual_review_prompt,
         "rankings": [dict(r) for r in rank_rows],
     }
 

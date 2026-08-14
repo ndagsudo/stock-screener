@@ -26,15 +26,20 @@ JQUANTS_BASE_URL = "https://api.jquants.com/v2"
 JQUANTS_REQUESTS_PER_MINUTE = int(os.environ.get("JQUANTS_REQUESTS_PER_MINUTE", "5"))
 
 # --------------------------------------------------------------------------
-# AI analysis (Anthropic API) — optional. Site must work without it.
+# AI定性分析（手動レビュー方式）
+#
+# このプロジェクトは Anthropic API を直接呼び出さない（APIキー・APIクレジット
+# 不要）。パイプラインはスコア上位銘柄について「AIに渡すデータ＋調査観点」を
+# data/ai_review/{run_id}/{code}.txt に書き出すだけで、実際の定性分析は
+# 利用者が手動で（Claude Code 等で）行い、scripts/import_ai_analysis.py で
+# 結果をDBに取り込む。
 # --------------------------------------------------------------------------
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
-# Re-analyze a stock only when one of these is true (cost control):
-AI_REANALYSIS_MAX_AGE_DAYS = 90          # stale cache age
-AI_REANALYSIS_ON_RANK_JUMP = 5           # rank improved by at least N places
-AI_REANALYSIS_ON_NEW_FINANCIALS = True   # a newer disclosure than cached one exists
+# 既存の分析結果が十分新しければ再エクスポートをスキップする（レビューの
+# 手間を無駄に増やさないための閾値）:
+AI_REANALYSIS_MAX_AGE_DAYS = 90          # キャッシュが古いとみなす日数
+AI_REANALYSIS_ON_RANK_JUMP = 5           # 順位がN位以上改善したら再エクスポート対象にする
+AI_REANALYSIS_ON_NEW_FINANCIALS = True   # 新しい決算が出ていたら再エクスポート対象にする
 
 # --------------------------------------------------------------------------
 # 対象ユニバース（時価総額フィルタ、円）
