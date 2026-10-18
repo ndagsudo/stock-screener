@@ -2,19 +2,25 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
 <title>{% block title %}{{ site_title }}{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="{{ asset_prefix }}static/style.css">
+<link rel="manifest" href="{{ asset_prefix }}static/manifest.json">
+<link rel="apple-touch-icon" href="{{ asset_prefix }}static/icons/icon-192.png">
+<link rel="icon" href="{{ asset_prefix }}static/icons/icon-192.png">
 </head>
 <body>
 <header class="site-header">
   <div class="wrap">
-    <a class="logo" href="/index.html">📊 中小型株スクリーナー <span class="sub">投資版 miyagi-kids</span></a>
+    <a class="logo" href="{{ asset_prefix }}index.html">📊 中小型株スクリーナー <span class="sub">投資版 miyagi-kids</span></a>
     <nav>
-      <a href="/index.html">今週の注目株</a>
-      <a href="/rankings.html">ランキング</a>
-      <a href="/history.html">過去の記録</a>
-      <a href="/methodology.html">仕組み・免責</a>
+      <a href="{{ asset_prefix }}index.html">今週の注目株</a>
+      <a href="{{ asset_prefix }}rankings.html">ランキング</a>
+      <a href="{{ asset_prefix }}history.html">過去の記録</a>
+      <a href="{{ asset_prefix }}methodology.html">仕組み・免責</a>
     </nav>
   </div>
 </header>
@@ -32,6 +38,6 @@
     <p class="generated-at">ページ生成日時（UTC）: {{ generated_at }}</p>
   </div>
 </footer>
-<script src="/static/app.js"></script>
+<script src="{{ asset_prefix }}static/app.js"></script>
 </body>
 </html>

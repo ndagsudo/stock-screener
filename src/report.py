@@ -209,10 +209,15 @@ def render_site(conn: sqlite3.Connection, run_id: Optional[str] = None) -> None:
         run_context = load_run_context(conn, run_id)
         perf = load_performance_context(conn)
 
+    # GitHub Pagesはプロジェクトサイト（https://<user>.github.io/<repo>/ というサブパス）
+    # で配信されるため、テンプレート内のリンク・アセット参照は絶対パス（例: "/static/..."）
+    # ではなく相対パスにする必要がある。asset_prefix はページの深さ（サイト直下 or
+    # stocks/配下）に応じて "" または "../" を渡す。
     common = {
         "generated_at": now_iso,
         "site_title": "日本中小型株スクリーナー（投資版 miyagi-kids）",
         "settings": settings,
+        "asset_prefix": "",
     }
 
     index_tmpl = env.get_template("index.html")
@@ -243,8 +248,9 @@ def render_site(conn: sqlite3.Connection, run_id: Optional[str] = None) -> None:
             stock_ctx = load_stock_context(conn, code, run_id)
             if stock_ctx is None:
                 continue
+            stock_common = {**common, "asset_prefix": "../"}
             (settings.SITE_DIR / "stocks" / f"{code}.html").write_text(
-                stock_tmpl.render(**common, stock=stock_ctx), encoding="utf-8"
+                stock_tmpl.render(**stock_common, stock=stock_ctx), encoding="utf-8"
             )
 
     static_dest = settings.SITE_DIR / "static"

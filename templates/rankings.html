@@ -23,7 +23,7 @@
       <tr>
         <td>{{ item.rank }}</td>
         <td>{{ item.rank_change_display }}{% if item.prev_rank %} (前週{{ item.prev_rank }}位){% endif %}</td>
-        <td><a href="/stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
+        <td><a href="{{ asset_prefix }}stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
         <td>{{ item.score|num(1) }}</td>
         <td>{{ item.price|price }}</td>
         <td>{{ item.indicators.per|num(1) if item.indicators.per is not none else "データなし" }}</td>

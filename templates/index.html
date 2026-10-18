@@ -17,7 +17,7 @@
   {% if run.categories.weekly_top10 %}
   <div class="card-grid">
     {% for item in run.categories.weekly_top10 %}
-    <a class="stock-card rank-{{ item.rank }}" href="/stocks/{{ item.code }}.html">
+    <a class="stock-card rank-{{ item.rank }}" href="{{ asset_prefix }}stocks/{{ item.code }}.html">
       <div class="rank-badge">
         {% if item.rank == 1 %}🥇{% elif item.rank == 2 %}🥈{% elif item.rank == 3 %}🥉{% else %}{{ item.rank }}位{% endif %}
       </div>
@@ -80,7 +80,7 @@
     {% for item in items[:5] %}
       <tr>
         <td>{{ item.rank }}</td>
-        <td><a href="/stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
+        <td><a href="{{ asset_prefix }}stocks/{{ item.code }}.html">{{ item.company_name or item.code }} ({{ item.code }})</a></td>
         <td>{{ item.score|num(1) }}</td>
         <td>{{ item.price|price }}</td>
         <td>{{ item.reason }}</td>
@@ -88,7 +88,7 @@
     {% endfor %}
     </tbody>
   </table>
-  <a class="more-link" href="/rankings.html#{{ key }}">すべて見る →</a>
+  <a class="more-link" href="{{ asset_prefix }}rankings.html#{{ key }}">すべて見る →</a>
   {% else %}
   <p class="empty">該当銘柄なし</p>
   {% endif %}

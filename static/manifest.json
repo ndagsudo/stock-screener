@@ -1,0 +1,15 @@
+{
+  "name": "中小型株スクリーナー 投資版 miyagi-kids",
+  "short_name": "株スクリーナー",
+  "description": "日本の東証上場中小型株から、利益成長に対して株価が割安な銘柄を毎週自動発掘する個人用投資研究サイト",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

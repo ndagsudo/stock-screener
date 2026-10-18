@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>アイコン生成ツール</title>
+  <style>
+    body { font-family: sans-serif; padding: 30px; background: #0b1220; color: #e5e9f0; }
+    h1 { color: #4fa3ff; margin-bottom: 20px; }
+    canvas { display: none; }
+    .btn { display:inline-block; padding:12px 24px; background:#1e5fa8; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:15px; margin:8px 0; }
+    p { margin:10px 0; color:#b8c2d4; line-height:1.6; }
+    .note { background:#132233; border-left:4px solid #4fa3ff; padding:12px 16px; border-radius:0 8px 8px 0; margin-top:20px; }
+    code { color:#4fa3ff; }
+  </style>
+</head>
+<body>
+  <h1>📊 アイコン生成ツール（中小型株スクリーナー）</h1>
+  <p>このページをブラウザで開き、下のボタンでアイコンPNGを生成・ダウンロードしてください。<br>
+     ダウンロードしたファイルを <code>static/icons/</code> フォルダに配置してください。</p>
+
+  <canvas id="c192" width="192" height="192"></canvas>
+  <canvas id="c512" width="512" height="512"></canvas>
+
+  <br>
+  <button class="btn" onclick="generate(192)">icon-192.png をダウンロード</button><br>
+  <button class="btn" onclick="generate(512)">icon-512.png をダウンロード</button>
+
+  <div class="note">
+    <strong>配置先：</strong><code>static/icons/icon-192.png</code> と <code>icon-512.png</code><br>
+    ビルド時に static/ から site/static/ へそのままコピーされます。
+  </div>
+
+  <script>
+    function generate(size) {
+      const canvas = document.getElementById('c' + size);
+      const ctx = canvas.getContext('2d');
+      const s = size;
+      const unit = s / 192;
+
+      const grad = ctx.createLinearGradient(0, 0, s, s);
+      grad.addColorStop(0, '#0b1220');
+      grad.addColorStop(1, '#1e5fa8');
+      ctx.fillStyle = grad;
+      roundRect(ctx, 0, 0, s, s, s * 0.22);
+      ctx.fill();
+
+      // 棒グラフ（右肩上がり）
+      ctx.fillStyle = '#4fa3ff';
+      const bars = [
+        { x: 0.22, h: 0.22 },
+        { x: 0.40, h: 0.34 },
+        { x: 0.58, h: 0.48 },
+      ];
+      const barW = s * 0.13;
+      const baseY = s * 0.60;
+      bars.forEach(b => {
+        const bh = s * b.h;
+        roundRectTop(ctx, s * b.x, baseY - bh, barW, bh, s * 0.03);
+        ctx.fill();
+      });
+
+      // 虫眼鏡（発掘・スクリーニングのイメージ）
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 7 * unit;
+      ctx.lineCap = 'round';
+      const mgCx = s * 0.68, mgCy = s * 0.34, mgR = s * 0.12;
+      ctx.beginPath();
+      ctx.arc(mgCx, mgCy, mgR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mgCx + mgR * 0.75, mgCy + mgR * 0.75);
+      ctx.lineTo(mgCx + mgR * 1.5, mgCy + mgR * 1.5);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(20 * unit)}px -apple-system,sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('成長株', s * 0.5, s * 0.84);
+
+      const link = document.createElement('a');
+      link.download = 'icon-' + size + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function roundRectTop(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h);
+      ctx.closePath();
+    }
+  </script>
+</body>
+</html>
